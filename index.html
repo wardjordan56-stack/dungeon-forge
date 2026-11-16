@@ -519,3 +519,142 @@ btn.onclick=async()=>{
 </script>
 </body>
 </html>
+<script>
+(async()=>{
+const URL="https://iihxiacidupzjgndczdg.supabase.co";
+const KEY="sb_publishable_4067Vi-mJ9j_fN-uO7QbPA_f1p5LWJF";
+
+while(!window.supabase)
+ await new Promise(r=>setTimeout(r,100));
+
+const db=window.supabase.createClient(URL,KEY);
+
+let tries=0;
+while(!document.getElementById("dfList")&&tries++<100)
+ await new Promise(r=>setTimeout(r,100));
+
+const $=id=>document.getElementById(id);
+if(!$("dfList"))return;
+
+const btn=document.createElement("button");
+btn.textContent="👥 Collaborate";
+btn.style="margin:8px 0";
+$("dfList").after(btn);
+
+const panel=document.createElement("div");
+panel.style="display:none;padding:12px;margin-top:10px;border:1px solid #7165a8;border-radius:10px";
+
+panel.innerHTML=`
+<h3>Invite a collaborator</h3>
+<p>Invitations expire after 7 days.</p>
+<input id="dfInviteEmail" type="email"
+placeholder="Collaborator's account email"
+style="width:100%;padding:10px;margin:5px 0">
+
+<select id="dfInviteRole"
+style="width:100%;padding:10px;margin:5px 0">
+<option value="editor">Editor</option>
+<option value="viewer">Viewer</option>
+</select>
+
+<button id="dfInviteCreate">Create invitation</button>
+<div id="dfInviteStatus" style="margin-top:10px"></div>
+<div id="dfInviteList" style="margin-top:10px"></div>
+`;
+
+btn.after(panel);
+
+const status=s=>{
+ $("dfInviteStatus").textContent=s;
+};
+
+async function loadInvites(){
+ const {data:{user}}=await db.auth.getUser();
+ const pid=localStorage.getItem("dungeonForgeCloudId");
+
+ if(!user)return status("Sign in first.");
+ if(!pid)return status("Save your dungeon to the cloud first."); const {data,error}=await db.from("project_invitations")
+  .select("*")
+  .eq("project_id",pid)
+  .order("created_at",{ascending:false});
+
+ if(error)return status(error.message);
+
+ $("dfInviteList").innerHTML="<h3>Invitations</h3>";
+
+ (data||[]).forEach(inv=>{
+  const item=document.createElement("div");
+  item.style="padding:10px;margin:6px 0;border:1px solid #555;border-radius:8px";
+
+  const state=inv.revoked_at?"Revoked":
+   inv.accepted_at?"Accepted":
+   new Date(inv.expires_at)<new Date()?"Expired":"Pending";
+
+  const info=document.createElement("p");
+  info.textContent=inv.invited_email+" · "+inv.role+" · "+state;
+  item.append(info);
+
+  if(state==="Pending"){
+   const copy=document.createElement("button");
+   copy.textContent="Copy invitation link";
+   copy.onclick=()=>{
+    const link=location.origin+location.pathname+
+     "?invite="+encodeURIComponent(inv.invite_token);
+    navigator.clipboard.writeText(link)
+     .then(()=>alert("Invitation link copied!"))
+     .catch(()=>prompt("Copy this invitation link:",link));
+   };
+
+   const revoke=document.createElement("button");
+   revoke.textContent="Revoke";
+   revoke.style="margin-left:6px";
+   revoke.onclick=async()=>{
+    const {error}=await db.from("project_invitations")
+     .update({revoked_at:new Date().toISOString()})
+     .eq("id",inv.id);
+    if(error)alert(error.message);
+    else loadInvites();
+   };
+
+   item.append(copy,revoke);
+  }
+
+  $("dfInviteList").append(item);
+ });
+}
+
+btn.onclick=async()=>{
+ panel.style.display=panel.style.display==="none"?"block":"none";
+ if(panel.style.display==="block")await loadInvites();
+};
+
+$("dfInviteCreate").onclick=async()=>{
+ const email=$("dfInviteEmail").value.trim().toLowerCase();
+ const role=$("dfInviteRole").value;
+ const {data:{user}}=await db.auth.getUser();
+ const pid=localStorage.getItem("dungeonForgeCloudId");
+
+ if(!user)return status("Please sign in first.");
+ if(!pid)return status("Save your dungeon to the cloud first.");
+ if(!email.includes("@"))return status("Enter a valid email address.");
+ if(email===user.email.toLowerCase())
+  return status("You can't invite your own account.");
+
+ status("Creating invitation...");
+
+ const {error}=await db.from("project_invitations").insert({
+  project_id:pid,
+  owner_id:user.id,
+  invited_email:email,
+  role:role
+ });
+
+ if(error)return status("Could not create invitation: "+error.message);
+
+ $("dfInviteEmail").value="";
+ status("Invitation created!");
+ await loadInvites();
+};
+
+})();
+</script>
