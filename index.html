@@ -774,5 +774,91 @@ window.addEventListener("beforeunload",()=>{
 });
 })();
 </script>
+<script>
+(async()=>{
+const URL="https://iihxiacidupzjgndczdg.supabase.co";
+const KEY="sb_publishable_4067Vi-mJ9j_fN-uO7QbPA_f1p5LWJF";
+
+while(!window.supabase||!document.getElementById("dfSave"))
+ await new Promise(r=>setTimeout(r,150));
+
+const db=window.supabase.createClient(URL,KEY);
+const status=s=>{
+ const el=document.getElementById("dfStatus");
+ if(el)el.textContent=s;
+};
+
+document.getElementById("dfSave").onclick=async()=>{
+ const {data:{user}}=await db.auth.getUser();
+ if(!user)return status("Please sign in first.");
+
+ const raw=localStorage.getItem("dungeonForgeWebsite");
+ if(!raw)return status("No local project found.");
+
+ let project;
+ try{project=JSON.parse(raw);}
+ catch(e){return status("Project data could not be read.");}
+
+ const id=localStorage.getItem("dungeonForgeCloudId");
+
+ const payload={
+  name:project.campaign?.name||"Dungeon Forge Project",
+  description:"Saved from Dungeon Forge",
+  project_data:project,
+  updated_at:new Date().toISOString()
+ };
+
+ if(id){
+  status("Checking project permissions...");
+
+  const {data:record,error}=await db.from("projects")
+   .select("owner_id")
+   .eq("id",id)
+   .single();
+
+  if(error)return status("Project access error: "+error.message);
+
+  let allowed=record.owner_id===user.id;
+
+  if(!allowed){
+   const {data:member,error:memberError}=await db
+    .from("project_members")
+    .select("role")
+    .eq("project_id",id)
+    .eq("user_id",user.id)
+    .maybeSingle();
+
+   if(memberError)return status(memberError.message);
+   allowed=member?.role==="editor";
+  }
+
+  if(!allowed)
+   return status("Viewer access: you cannot save this shared project.");
+
+  const {error:updateError}=await db.from("projects")
+   .update(payload)
+   .eq("id",id);
+
+  if(updateError)return status("Save failed: "+updateError.message);
+
+  return status("Shared project saved successfully!");
+ }
+
+ const {data:created,error}=await db.from("projects")
+  .insert({
+   ...payload,
+   owner_id:user.id,
+   visibility:"private"
+  })
+  .select("id")
+  .single();
+
+ if(error)return status("Save failed: "+error.message);
+
+ localStorage.setItem("dungeonForgeCloudId",created.id);
+ status("New cloud project created!");
+};
+})();
+</script>
 </body>
 </html>
