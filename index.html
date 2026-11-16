@@ -271,3 +271,131 @@ render();save();
 })();
 </script>
 </body></html>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(async function(){
+const URL="https://iihxiacidupzjgndczdg.supabase.co";
+const KEY="sb_publishable_4067Vi-m9Jj_f1p5LWJF";
+const wait=()=>new Promise((resolve,reject)=>{
+let n=0;const t=setInterval(()=>{
+if(window.supabase){clearInterval(t);resolve();}
+else if(++n>50){clearInterval(t);reject(Error("Supabase library failed to load."));}
+},100);
+});
+try{
+await wait();
+const db=window.supabase.createClient(URL,KEY);
+const actions=document.querySelector(".actions");
+const btn=document.createElement("button");
+btn.textContent="☁ Account & Cloud";
+actions.prepend(btn);
+
+const modal=document.createElement("div");
+modal.style="position:fixed;inset:0;background:#000c;z-index:9999;display:none;place-items:center;padding:15px";
+modal.innerHTML=`
+<div style="background:#171e2e;color:white;padding:20px;border:1px solid #7165a8;border-radius:14px;width:min(440px,100%);max-height:90vh;overflow:auto">
+<h2>☁ Dungeon Forge Cloud</h2>
+<p id="dfStatus">Checking account...</p>
+<input id="dfEmail" type="email" placeholder="Email" style="width:100%;padding:12px;margin:5px 0">
+<input id="dfPass" type="password" placeholder="Password" style="width:100%;padding:12px;margin:5px 0">
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+<button id="dfSignup">Create account</button>
+<button id="dfLogin">Sign in</button>
+<button id="dfLogout">Sign out</button>
+</div>
+<hr>
+<button id="dfSave">☁ Save current project</button>
+<button id="dfList">Load cloud projects</button>
+<div id="dfProjects" style="margin-top:12px"></div>
+<button id="dfClose" style="margin-top:15px">Close</button>
+</div>`;
+document.body.append(modal);
+const $=id=>document.getElementById(id);
+const status=s=>$("dfStatus").textContent=s;
+btn.onclick=()=>modal.style.display="grid";
+$("dfClose").onclick=()=>modal.style.display="none";
+
+$("dfSignup").onclick=async()=>{
+const {data,error}=await db.auth.signUp({
+email:$("dfEmail").value.trim(),
+password:$("dfPass").value
+});
+if(error)return status(error.message);
+status(data.session?"Account created and signed in!":"Account created. Check your email to confirm it, then sign in.");
+};
+$("dfLogin").onclick=async()=>{
+const {error}=await db.auth.signInWithPassword({
+email:$("dfEmail").value.trim(),
+password:$("dfPass").value
+});
+status(error?error.message:"Signed in!");
+};
+$("dfLogout").onclick=async()=>{
+const {error}=await db.auth.signOut();
+status(error?error.message:"Signed out.");
+};
+db.auth.onAuthStateChange((event,session)=>{
+if(session)status("Signed in: "+session.user.email);
+else status("Not signed in.");
+});
+
+$("dfSave").onclick=async()=>{
+const {data:{user}}=await db.auth.getUser();
+if(!user)return status("Please sign in first.");
+const raw=localStorage.getItem("dungeonForgeWebsite");
+if(!raw)return status("No local project found.");
+let project;
+try{project=JSON.parse(raw);}catch(e){return status("Couldn't read your local project.");}
+const cloudId=localStorage.getItem("dungeonForgeCloudId");
+const payload={
+owner_id:user.id,
+name:project.campaign?.name||"Dungeon Forge Project",
+description:"Saved from Dungeon Forge",
+project_data:project,
+visibility:"private",
+updated_at:new Date().toISOString()
+};
+let result;
+if(cloudId){
+result=await db.from("projects").update(payload)
+.eq("id",cloudId).eq("owner_id",user.id).select("id").single();
+}
+if(!cloudId||result?.error){
+result=await db.from("projects").insert(payload).select("id").single();
+}
+if(result.error)return status("Save failed: "+result.error.message);
+localStorage.setItem("dungeonForgeCloudId",result.data.id);
+status("Cloud save complete!");
+};
+
+$("dfList").onclick=async()=>{
+const {data:{user}}=await db.auth.getUser();
+if(!user)return status("Please sign in first.");
+const {data,error}=await db.from("projects")
+.select("id,name,updated_at")
+.eq("owner_id",user.id)
+.order("updated_at",{ascending:false});
+if(error)return status("Couldn't load projects: "+error.message);
+$("dfProjects").innerHTML="";
+if(!data.length){$("dfProjects").textContent="No cloud saves yet.";return;}
+data.forEach(p=>{
+const b=document.createElement("button");
+b.textContent="Load: "+p.name;
+b.style="display:block;width:100%;margin:6px 0;padding:10px";
+b.onclick=async()=>{
+const {data:record,error}=await db.from("projects")
+.select("project_data").eq("id",p.id).single();
+if(error)return status("Load failed: "+error.message);
+if(!record?.project_data)return status("Project data is empty.");
+localStorage.setItem("dungeonForgeWebsite",JSON.stringify(record.project_data));
+localStorage.setItem("dungeonForgeCloudId",p.id);
+location.reload();
+};
+$("dfProjects").append(b);
+});
+status(data.length+" cloud project(s) found.");
+};
+}catch(e){console.error(e);alert("Cloud setup error: "+e.message);}
+})();
+</script>
+</body></html>
