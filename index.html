@@ -399,3 +399,123 @@ status(data.length+" cloud project(s) found.");
 })();
 </script>
 </body></html>
+
+<script>
+(async()=>{
+const URL="https://iihxiacidupzjgndczdg.supabase.co";
+const KEY="sb_publishable_4067Vi-mJ9j_fN-uO7QbPA_f1p5LWJF";
+
+while(!window.supabase)
+ await new Promise(r=>setTimeout(r,100));
+
+const db=window.supabase.createClient(URL,KEY);
+const token=new URLSearchParams(location.search).get("share");
+
+if(token){
+ const {data,error}=await db.rpc("get_shared_project",{
+  p_share_token:token
+ });
+ if(error||!data||!data.length){
+  alert("This share link is invalid or revoked.");
+  return;
+ }
+ localStorage.setItem(
+  "dungeonForgeWebsite",
+  JSON.stringify(data[0].project_data)
+ );
+ localStorage.removeItem("dungeonForgeCloudId");
+ alert("Shared dungeon opened! This is your own local copy.");
+ location.replace(location.pathname+location.hash);
+ return;
+}
+
+let attempts=0;
+while(!document.getElementById("dfList")&&attempts++<100)
+ await new Promise(r=>setTimeout(r,100));
+
+const list=document.getElementById("dfList");
+if(!list)return;
+
+const btn=document.createElement("button");
+btn.textContent="🔗 Share & Manage Links";
+list.after(btn);
+
+const box=document.createElement("div");
+box.style="margin-top:12px";
+btn.after(box);
+
+btn.onclick=async()=>{
+ const {data:{user}}=await db.auth.getUser();
+ if(!user){alert("Sign in first.");return;}
+
+ const projectId=localStorage.getItem("dungeonForgeCloudId");
+ if(!projectId){
+  alert("Save this dungeon to the cloud first.");
+  return;
+ }
+
+ box.innerHTML="";
+ const create=document.createElement("button");
+ create.textContent="＋ Create share link";
+ box.append(create);
+
+ create.onclick=async()=>{
+  const {data,error}=await db.from("shared_projects")
+   .insert({project_id:projectId,owner_id:user.id})
+   .select("id,share_token").single();
+
+  if(error){alert(error.message);return;}
+  alert("Share link created!");
+  btn.click();
+ };
+
+ const {data,error}=await db.from("shared_projects")
+  .select("id,share_token,active")
+  .eq("project_id",projectId)
+  .eq("owner_id",user.id)
+  .order("created_at",{ascending:false});
+
+ if(error){box.append(error.message);return;}
+
+ data.filter(s=>s.active).forEach(s=>{
+  const row=document.createElement("div");
+  row.style="padding:10px;border:1px solid #65708a;margin-top:8px";
+
+  const url=location.origin+location.pathname+
+   "?share="+encodeURIComponent(s.share_token);
+
+  const link=document.createElement("a");
+  link.href=url;
+  link.textContent="Open shared dungeon";
+  link.target="_blank";
+  link.rel="noopener";
+  link.style="display:block;overflow-wrap:anywhere";
+
+  const copy=document.createElement("button");
+  copy.textContent="Copy link";
+  copy.onclick=async()=>{
+   try{
+    await navigator.clipboard.writeText(url);
+    alert("Link copied!");
+   }catch(e){prompt("Copy this link:",url);}
+  };
+
+  const revoke=document.createElement("button");
+  revoke.textContent="Revoke link";
+  revoke.onclick=async()=>{
+   if(!confirm("Revoke this share link?"))return;
+   const {error}=await db.from("shared_projects")
+    .update({active:false})
+    .eq("id",s.id)
+    .eq("owner_id",user.id);
+   if(error){alert(error.message);return;}
+   btn.click();
+  };
+
+  row.append(link,copy,revoke);
+  box.append(row);
+ });
+};
+})();
+</script>
+
