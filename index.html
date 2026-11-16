@@ -660,3 +660,60 @@ $("dfInviteCreate").onclick=async()=>{
 </script>
 </body>
 </html>
+<script>
+(async()=>{
+const URL="https://iihxiacidupzjgndczdg.supabase.co";
+const KEY="sb_publishable_4067Vi-mJ9j_fN-uO7QbPA_f1p5LWJF";
+
+const token=new URLSearchParams(location.search).get("invite");
+if(!token)return;
+
+while(!window.supabase)
+ await new Promise(r=>setTimeout(r,100));
+
+const db=window.supabase.createClient(URL,KEY);
+
+const notice=document.createElement("div");
+notice.style="position:fixed;z-index:99999;bottom:15px;left:5%;width:90%;padding:16px;background:#202033;color:white;border:1px solid #8b7cff;border-radius:12px";
+notice.textContent="Dungeon Forge invitation detected...";
+document.body.append(notice);
+
+const {data:{user}}=await db.auth.getUser();
+
+if(!user){
+ notice.textContent="Please sign in using the email address that received this invitation, then reopen the invitation link.";
+ return;
+}
+
+notice.textContent="Checking invitation...";
+
+const {data,error}=await db.rpc("accept_project_invite",{
+ p_invite_token:token
+});
+
+if(error){
+ notice.textContent="Invitation error: "+error.message;
+ return;
+}
+
+const {data:project,error:loadError}=await db.from("projects")
+ .select("*")
+ .eq("id",data.project_id)
+ .single();
+
+if(loadError){
+ notice.textContent="Joined successfully, but loading failed: "+loadError.message;
+ return;
+}
+
+localStorage.setItem("dungeonForgeWebsite",JSON.stringify(project.project_data));
+localStorage.setItem("dungeonForgeCloudId",project.id);
+
+notice.textContent="Invitation accepted! Loading your shared dungeon...";
+history.replaceState({},document.title,location.pathname);
+
+setTimeout(()=>location.reload(),1200);
+})();
+</script>
+</body>
+</html>
